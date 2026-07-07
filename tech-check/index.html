@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laia — Acceso Técnico</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    :root {
+      bg: #0b1220;
+      card: #111827;
+      border: #1f2937;
+      text: #e5e7eb;
+      muted: #9ca3af;
+      teal: #0d9488;
+      amber: #f59e0b;
+      navy: #1e3a5f;
+      danger: #ef4444;
+      success: #10b981;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0b1220;
+      color: #e5e7eb;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .col { flex: 1 1 240px; }
+
+    input, select, button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #1f2937;
+      background: #0b1220;
+      color: #e5e7eb;
+      font-size: 16px;
+    }
+
+    button { cursor: pointer; border: none; font-weight: 600; }
+    button.primary { background: #0d9488; color: white; }
+    button.ghost { background: transparent; color: #9ca3af; border: 1px solid #1f2937; }
+    button.danger { background: #7f1d1d; color: white; }
+    button:disabled { opacity: 0.5; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #111827;
+      border: 1px solid #1f2937;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    .status { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status.idle { background: #10b981; }
+    .status.running { background: #f59e0b; }
+    .status.reserved { background: #3b82f6; }
+    .status.maintenance { background: #6b7280; }
+    .status.offline { background: #ef4444; }
+
+    .machine-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    .machine-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .toast {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #1f2937;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      z-index: 1000;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px;">
+      <div>
+        <div style="font-weight:700; font-size:18px;">Laia</div>
+        <div style="color:#9ca3af; font-size:12px;">Acceso técnico</div>
+      </div>
+      <div class="badge" id="userBadge" style="display:none;">
+        <span id="userEmail"></span>
+        <button class="ghost" onclick="logout()" style="width:auto; padding:6px 10px;">Salir</button>
+      </div>
+    </header>
+
+    <section id="loginSection" class="card">
+      <h2 style="margin:0 0 10px;">Ingresar</h2>
+      <div class="row">
+        <div class="col">
+          <input id="email" type="email" placeholder="Email" />
+        </div>
+        <div class="col">
+          <input id="password" type="password" placeholder="Contraseña" />
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="primary" onclick="login()">Entrar</button>
+      </div>
+      <p style="color:#9ca3af; font-size:12px; margin-top:8px;">Usá tu cuenta de operador/admin de Supabase.</p>
+    </section>
+
+    <section id="appSection" class="hidden">
+      <div class="card">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:700;">Máquinas</div>
+            <div style="color:#9ca3af; font-size:12px;">Estado en vivo · lavandería</div>
+          </div>
+          <div class="badge" id="connectionBadge">Conectando...</div>
+        </div>
+        <div class="machine-grid" id="machineGrid" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700;">Sesiones recientes</div>
+        <div id="sessionsList" style="color:#9ca3af; font-size:12px; margin-top:6px;">Sin datos aún.</div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://vsfoeoobbsxwcmmabqrj.supabase.co';
+    const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzZm9lb29iYnN4d2NtbWFicXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMjg4NDQsImV4cCI6MjA5NzgwNDg0NH0.xwtJF8lP9RXbuzbSs1DXYIoeeu_TSEdcmVfvm1wO5J0;
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let profile = null;
+    let locationId = null;
+    let channel = null;
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 2500);
+    }
+
+    async function login() {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      if (!email || !password) return toast('Completá email y contraseña.');
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return toast(error.message);
+      await afterLogin();
+    }
+
+    async function logout() {
+      await supabase.auth.signOut();
+      location.reload();
+    }
+
+    async function afterLogin() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) return toast('Sesión inválida.');
+
+      const { data: profileRow, error } = await supabase
+        .from('profiles')
+        .select('role, location_id')
+        .eq('id', uid)
+        .single();
+
+      if (error || !profileRow) return toast('Tu usuario no tiene perfil de operador/admin.');
+      if (!['admin', 'operator'].includes(profileRow.role)) return toast('Rol no autorizado.');
+
+      profile = profileRow;
+      locationId = profileRow.location_id;
+
+      document.getElementById('loginSection').classList.add('hidden');
+      document.getElementById('appSection').classList.remove('hidden');
+      document.getElementById('userBadge').style.display = 'flex';
+      document.getElementById('userEmail').textContent = session.user.email;
+
+      loadSessions();
+      subscribeMachines();
+    }
+
+    async function loadSessions() {
+      const { data } = await supabase
+        .from('sessions')
+        .select('id, status, started_at, ended_at, machines(display_name)')
+        .eq('location_id', locationId)
+        .order('started_at', { ascending: false })
+        .limit(20);
+
+      const container = document.getElementById('sessionsList');
+      if (!data || !data.length) return;
+      container.innerHTML = data.map(s => `
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1f2937;">
+          <div>
+            <div style="font-weight:600;">${s.machines?.display_name ?? 'Máquina'}</div>
+            <div style="color:#9ca3af; font-size:11px;">${new Date(s.started_at).toLocaleString('es-AR')}</div>
+          </div>
+          <div class="badge">${s.status}</div>
+        </div>
+      `).join('');
+    }
+
+    function subscribeMachines() {
+      const grid = document.getElementById('machineGrid');
+      const badge = document.getElementById('connectionBadge');
+
+      channel = supabase
+        .channel('machines-' + locationId)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'machines', filter: `location_id=eq.${locationId}` }, payload => {
+          renderMachine(payload.new);
+        })
+        .subscribe((status) => {
+          badge.textContent = status === 'SUBSCRIBED' ? 'En vivo' : status;
+        });
+
+      supabase
+        .from('machines')
+        .select('*')
+        .eq('location_id', locationId)
+        .then(({ data }) => {
+          grid.innerHTML = '';
+          (data ?? []).forEach(renderMachine);
+        });
+    }
+
+    function renderMachine(m) {
+      const grid = document.getElementById('machineGrid');
+      let el = document.getElementById('machine-' + m.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'machine-' + m.id;
+        el.className = 'machine-card';
+        grid.appendChild(el);
+      }
+
+      const statusClass = String(m.status || 'offline').toLowerCase();
+      const isOffline = statusClass === 'offline' || statusClass === 'maintenance';
+      const activateLabel = statusClass === 'dryer' ? 'Activar secadora' : 'Activar lavadora';
+
+      el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div>
+            <div style="font-weight:700;">${m.display_name ?? 'Máquina'}</div>
+            <div style="color:#9ca3af; font-size:12px;">${m.category ?? ''} · ${m.serial ?? ''}</div>
+          </div>
+          <div class="badge"><span class="status ${statusClass}"></span> ${m.status}</div>
+        </div>
+        <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="primary" onclick="activateMachine('${m.id}')" ${isOffline ? 'disabled' : ''}>
+            ${activateLabel}
+          </button>
+          <button class="ghost" onclick="showStatus('${m.id}')">Estado</button>
+        </div>
+      `;
+    }
+
+    async function activateMachine(id) {
+      const { data, error } = await supabase.functions.invoke('activate-machine', {
+        body: { machine_id: id },
+      });
+      if (error) return toast('Error: ' + error.message);
+      toast('Comando enviado.');
+    }
+
+    async function showStatus(id) {
+      const { data } = await supabase.from('machines').select('*').eq('id', id).single();
+      if (!data) return toast('No encontrada.');
+      alert(JSON.stringify(data, null, 2));
+    }
+
+    // Auto-login si ya hay sesión
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await afterLogin();
+      }
+    })();
+  </script>
+</body>
+</html>
